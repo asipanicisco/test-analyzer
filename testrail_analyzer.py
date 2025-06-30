@@ -723,29 +723,9 @@ with st.sidebar:
                                                             if results and len(results) > 0:
                                                                 results_fetched = True
                                                             else:
-                                                                # No results returned, let's debug why
-                                                                st.warning(f"  No results returned for run {run_name}, trying with limit...")
-                                                                
-                                                                # Try different approaches
-                                                                # 1. Try with explicit limit
-                                                                results = api.get_results_for_run(run_id, limit=executed_count)
-                                                                if results and len(results) > 0:
-                                                                    results_fetched = True
-                                                                else:
-                                                                    # 2. Check if run has any results at all
-                                                                    st.info(f"  Run details: passed={passed}, failed={failed}, error={error}, blocked={blocked}")
-                                                                    
-                                                                    # 3. Try getting just 1 result to test API
-                                                                    try:
-                                                                        test_results = api.send_get(f"get_results_for_run/{run_id}&limit=1")
-                                                                        if test_results:
-                                                                            st.info(f"  API test successful, got {len(test_results)} results")
-                                                                        else:
-                                                                            st.warning(f"  API returned empty results for run {run_id}")
-                                                                    except Exception as test_e:
-                                                                        st.error(f"  API test failed: {str(test_e)}")
-                                                                    
-                                                                    st.warning(f"  Still no results for run {run_name}")
+                                                                # No results returned
+                                                                results = []
+                                                                results_fetched = False
                                                                     
                                                             if len(results) > 0:
                                                                 results_fetched = True
@@ -839,9 +819,9 @@ with st.sidebar:
                                                                     build_data['platforms'][platform][device_type]['sections']['Section details not fetched'] += build_data_temp['failed'] + build_data_temp['error']
                                                                     
                                                         except Exception as e:
-                                                            st.warning(f"  Could not fetch detailed results for {run_name}: {str(e)}")
+                                                            pass
                                                     else:
-                                                        st.warning(f"  Run has {executed_count} tests, exceeding limit of 10000. Using summary data.")
+                                                        pass
                                                     
                                                     # If we didn't get results, use summary data
                                                     if not results_fetched:
@@ -867,20 +847,23 @@ with st.sidebar:
                                                                             sections = api.get_sections(project_id, run['suite_id'])
                                                                             if sections and len(sections) > 0:
                                                                                 # Distribute failures proportionally across sections
-                                                                                section_names = [s['name'] for s in sections if isinstance(s, dict)]
-                                                                                failures_per_section = (failed + error) // len(section_names)
-                                                                                remainder = (failed + error) % len(section_names)
-                                                                                
-                                                                                for i, section_name in enumerate(section_names[:5]):  # Top 5 sections
-                                                                                    count = failures_per_section + (1 if i < remainder else 0)
-                                                                                    if count > 0:
-                                                                                        build_data['platforms'][platform][device_type]['sections'][f"{section_name} (estimated)"] += count
+                                                                                section_names = [s['name'] for s in sections if isinstance(s, dict) and s.get('name')]
+                                                                                if len(section_names) > 0:
+                                                                                    failures_per_section = (failed + error) // len(section_names)
+                                                                                    remainder = (failed + error) % len(section_names)
+                                                                                    
+                                                                                    for i, section_name in enumerate(section_names[:5]):  # Top 5 sections
+                                                                                        count = failures_per_section + (1 if i < remainder else 0)
+                                                                                        if count > 0:
+                                                                                            build_data['platforms'][platform][device_type]['sections'][f"{section_name} (estimated)"] += count
+                                                                                else:
+                                                                                    build_data['platforms'][platform][device_type]['sections']['Summary data - no valid sections found'] += failed + error
                                                                             else:
                                                                                 build_data['platforms'][platform][device_type]['sections']['Summary data - no sections found'] += failed + error
                                                                         else:
                                                                             build_data['platforms'][platform][device_type]['sections']['Summary data - no suite information'] += failed + error
                                                                     except Exception as e:
-                                                                        build_data['platforms'][platform][device_type]['sections'][f'Summary data - section fetch error: {str(e)[:30]}'] += failed + error
+                                                                        build_data['platforms'][platform][device_type]['sections']['Summary data - section details not available'] += failed + error
                                                                 else:
                                                                     build_data['platforms'][platform][device_type]['sections']['Summary data - details not available'] += failed + error
                                                     
