@@ -255,12 +255,8 @@ def matches_release_pattern(milestone_name, release_milestone):
     ms_lower = milestone_name.lower()
     release_lower = release_milestone.lower()
     
-    # CS-1: cs-17-2-202506022349-... (note: it's cs-17, not cs-1)
-    if release_lower == 'cs-1':
-        return ms_lower.startswith('cs-17-') and parse_build_date(milestone_name) is not None
-    
     # switch-17 or switch-18: switch-XX-202506182240-...
-    elif release_lower in ['switch-17', 'switch-18']:
+    if release_lower in ['switch-17', 'switch-18']:
         return ms_lower.startswith(release_lower + '-') and parse_build_date(milestone_name) is not None
     
     # Nightly: T-202506251848-...
@@ -510,7 +506,7 @@ with st.sidebar:
     st.info(f"Project ID: {project_id}")
     
     # Predefined milestones dropdown
-    milestone_options = ["CS-1", "switch-17", "switch-18", "Nightly", "Aurora2", "Trunk"]
+    milestone_options = ["switch-17", "switch-18", "Nightly", "Aurora2", "Trunk"]
     release_milestone = st.selectbox("Release Milestone", milestone_options, help="Select the release milestone to analyze")
     
     # Option to enable/disable section analysis
@@ -1486,7 +1482,6 @@ else:
     4. Click 'Fetch Data' to load the test results
     
     **Available Milestones:**
-    - CS-1
     - switch-17
     - switch-18
     - Nightly
