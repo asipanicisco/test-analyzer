@@ -100,7 +100,23 @@ class TestRailAPI:
     
     def get_tests(self, run_id):
         """Get all tests for a run"""
-        return self.send_get(f"get_tests/{run_id}")
+        response = self.send_get(f"get_tests/{run_id}")
+        
+        # Handle wrapped response format
+        if isinstance(response, dict):
+            if 'tests' in response:
+                return response['tests']
+            elif 'result' in response:
+                return response['result']
+            elif 'data' in response:
+                return response['data']
+            else:
+                # If it's a dict but doesn't have expected keys, return empty list
+                return []
+        elif isinstance(response, list):
+            return response
+        else:
+            return []
     
     def get_results_for_run(self, run_id, limit=None):
         """Get all results for a run with optional limit"""
@@ -111,7 +127,6 @@ class TestRailAPI:
         try:
             while True:
                 # Build the API call with pagination
-                # TestRail doesn't allow limit > 250, so we must paginate
                 current_limit = batch_size
                 if limit:
                     remaining = limit - len(results)
@@ -122,9 +137,17 @@ class TestRailAPI:
                 
                 url_suffix = f"get_results_for_run/{run_id}&offset={offset}&limit={current_limit}"
                 
-                batch = self.send_get(url_suffix)
+                response = self.send_get(url_suffix)
                 
-                if not batch or not isinstance(batch, list):
+                # Handle wrapped response format
+                if isinstance(response, dict) and 'results' in response:
+                    batch = response['results']
+                elif isinstance(response, list):
+                    batch = response
+                else:
+                    break
+                
+                if not batch:
                     break
                     
                 results.extend(batch)
@@ -151,11 +174,43 @@ class TestRailAPI:
     
     def get_sections(self, project_id, suite_id):
         """Get all sections for a suite"""
-        return self.send_get(f"get_sections/{project_id}&suite_id={suite_id}")
+        response = self.send_get(f"get_sections/{project_id}&suite_id={suite_id}")
+        
+        # Handle wrapped response format
+        if isinstance(response, dict):
+            if 'sections' in response:
+                return response['sections']
+            elif 'result' in response:
+                return response['result']
+            elif 'data' in response:
+                return response['data']
+            else:
+                # If it's a dict but doesn't have expected keys, return empty list
+                return []
+        elif isinstance(response, list):
+            return response
+        else:
+            return []
     
     def get_cases(self, project_id, suite_id):
         """Get all test cases for a suite"""
-        return self.send_get(f"get_cases/{project_id}&suite_id={suite_id}")
+        response = self.send_get(f"get_cases/{project_id}&suite_id={suite_id}")
+        
+        # Handle wrapped response format
+        if isinstance(response, dict):
+            if 'cases' in response:
+                return response['cases']
+            elif 'result' in response:
+                return response['result']
+            elif 'data' in response:
+                return response['data']
+            else:
+                # If it's a dict but doesn't have expected keys, return empty list
+                return []
+        elif isinstance(response, list):
+            return response
+        else:
+            return []
 
 # Helper functions
 def parse_build_date(milestone_name):
@@ -779,17 +834,30 @@ with st.sidebar:
                                                                             tests = api.get_tests(run_id)
                                                                             test_to_case = {test['id']: test['case_id'] for test in tests if isinstance(test, dict) and test.get('id') and test.get('case_id')}
                                                                             
+                                                                            if not test_to_case:
+                                                                                build_data['platforms'][platform][device_type]['sections']['No test-case mapping found'] += build_data_temp['failed'] + build_data_temp['error']
+                                                                                continue
+                                                                            
                                                                             # Step 2: Get all cases for this suite (maps case_id to section_id)
                                                                             cases = api.get_cases(project_id, run['suite_id'])
                                                                             case_to_section_id = {case['id']: case['section_id'] for case in cases if isinstance(case, dict) and case.get('id') and case.get('section_id')}
+                                                                            
+                                                                            if not case_to_section_id:
+                                                                                build_data['platforms'][platform][device_type]['sections']['No case-section mapping found'] += build_data_temp['failed'] + build_data_temp['error']
+                                                                                continue
                                                                             
                                                                             # Step 3: Get all sections for this suite (maps section_id to section_name)
                                                                             sections = api.get_sections(project_id, run['suite_id'])
                                                                             section_id_to_name = {section['id']: section['name'] for section in sections if isinstance(section, dict) and section.get('id') and section.get('name')}
                                                                             
+                                                                            if not section_id_to_name:
+                                                                                build_data['platforms'][platform][device_type]['sections']['No sections found'] += build_data_temp['failed'] + build_data_temp['error']
+                                                                                continue
+                                                                            
                                                                             # Step 4: Process failed/error results and map to sections
                                                                             sections_found = False
                                                                             section_counts = defaultdict(int)
+                                                                            unmapped_count = 0
                                                                             
                                                                             for result in results:
                                                                                 if isinstance(result, dict) and result.get('status_id') in [5, 6]:  # Failed or Error
@@ -804,17 +872,30 @@ with st.sidebar:
                                                                                                 section_name = section_id_to_name[section_id]
                                                                                                 section_counts[section_name] += 1
                                                                                                 sections_found = True
+                                                                                            else:
+                                                                                                unmapped_count += 1
+                                                                                        else:
+                                                                                            unmapped_count += 1
+                                                                                    else:
+                                                                                        unmapped_count += 1
                                                                             
                                                                             # Add section counts to build data
                                                                             if sections_found:
                                                                                 for section_name, count in section_counts.items():
                                                                                     build_data['platforms'][platform][device_type]['sections'][section_name] += count
+                                                                                if unmapped_count > 0:
+                                                                                    build_data['platforms'][platform][device_type]['sections'][f'Unmapped ({unmapped_count} tests)'] += unmapped_count
                                                                             else:
-                                                                                build_data['platforms'][platform][device_type]['sections']['Failed to map sections'] += build_data_temp['failed'] + build_data_temp['error']
+                                                                                build_data['platforms'][platform][device_type]['sections']['Failed to map any sections'] += build_data_temp['failed'] + build_data_temp['error']
                                                                         else:
                                                                             build_data['platforms'][platform][device_type]['sections']['No Suite ID'] += build_data_temp['failed'] + build_data_temp['error']
                                                                     except Exception as e:
-                                                                        build_data['platforms'][platform][device_type]['sections'][f'Mapping Error: {str(e)[:50]}'] += build_data_temp['failed'] + build_data_temp['error']
+                                                                        # Store the actual error message for debugging
+                                                                        error_msg = str(e)
+                                                                        if "list indices must be integers" in error_msg:
+                                                                            build_data['platforms'][platform][device_type]['sections']['API Response Format Error'] += build_data_temp['failed'] + build_data_temp['error']
+                                                                        else:
+                                                                            build_data['platforms'][platform][device_type]['sections'][f'Error: {error_msg[:50]}'] += build_data_temp['failed'] + build_data_temp['error']
                                                                 elif not fetch_sections and (build_data_temp['failed'] + build_data_temp['error']) > 0 and platform != 'Unknown' and device_type in ['single', 'stack']:
                                                                     build_data['platforms'][platform][device_type]['sections']['Section details not fetched'] += build_data_temp['failed'] + build_data_temp['error']
                                                                     
@@ -897,27 +978,11 @@ with st.sidebar:
 if 'testrail_data' in st.session_state:
     data = st.session_state['testrail_data']
     
-    # Filters
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        build_options = ['all'] + [b['name'] for b in data['builds']]
-        selected_build = st.selectbox("Filter by Build", build_options)
+    # View mode selector
+    view_mode = st.radio("View Mode", ['Table', 'Graph'], horizontal=True)
     
-    with col2:
-        # Get all platforms
-        all_platforms = set()
-        for build in data['builds']:
-            all_platforms.update(build['platforms'].keys())
-        platform_options = ['all'] + sorted(list(all_platforms))
-        selected_platform = st.selectbox("Filter by Platform", platform_options)
-    
-    with col3:
-        view_mode = st.radio("View Mode", ['Table', 'Graph'], horizontal=True)
-    
-    # Filter data based on selections
+    # Use all builds - no filtering
     filtered_builds = data['builds']
-    if selected_build != 'all':
-        filtered_builds = [b for b in filtered_builds if b['name'] == selected_build]
     
     # Overall Summary
     st.header("📊 Overall Test Results Summary")
@@ -1299,10 +1364,9 @@ if 'testrail_data' in st.session_state:
     all_sections = defaultdict(int)
     for build in filtered_builds:
         for platform, data_item in build['platforms'].items():
-            if selected_platform == 'all' or platform == selected_platform:
-                for device_type in ['single', 'stack']:
-                    for section, count in data_item[device_type]['sections'].items():
-                        all_sections[section] += count
+            for device_type in ['single', 'stack']:
+                for section, count in data_item[device_type]['sections'].items():
+                    all_sections[section] += count
     
     # Get top 10 failing sections
     top_sections = sorted(all_sections.items(), key=lambda x: x[1], reverse=True)[:10]
